@@ -12,3 +12,6 @@ instance/
 *.egg-info/
 dist/
 build/
+.env
+.venv
+venv/

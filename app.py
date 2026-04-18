@@ -100,7 +100,7 @@ def is_strong_password(password):
 
 def is_locked_out(username):
     if username not in LOGIN_ATTEMPTS:
-        return False
+        return False, None
     attempts, lock_time = LOGIN_ATTEMPTS[username]
     if attempts >= MAX_LOGIN_ATTEMPTS:
         if datetime.utcnow() - lock_time < timedelta(minutes=LOCKOUT_MINUTES):
@@ -259,19 +259,21 @@ def get_people():
         if age_min_str:
             try:
                 age_min = int(age_min_str)
-                if age_min >= 0 and age_min <= 150:
-                    query = query.filter(Person.age >= age_min)
+                if age_min < 0 or age_min > 150:
+                    return jsonify({'error': '参数 age_min 必须在 0-150 之间'}), 400
+                query = query.filter(Person.age >= age_min)
             except (ValueError, TypeError):
-                pass
+                return jsonify({'error': '参数 age_min 必须是有效的整数'}), 400
         
         age_max_str = request.args.get('age_max', '').strip()
         if age_max_str:
             try:
                 age_max = int(age_max_str)
-                if age_max >= 0 and age_max <= 150:
-                    query = query.filter(Person.age <= age_max)
+                if age_max < 0 or age_max > 150:
+                    return jsonify({'error': '参数 age_max 必须在 0-150 之间'}), 400
+                query = query.filter(Person.age <= age_max)
             except (ValueError, TypeError):
-                pass
+                return jsonify({'error': '参数 age_max 必须是有效的整数'}), 400
         
         pagination = query.order_by(Person.created_at.desc()).paginate(
             page=page,

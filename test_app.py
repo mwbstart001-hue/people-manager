@@ -207,19 +207,21 @@ def create_test_app():
             if age_min_str:
                 try:
                     age_min = int(age_min_str)
-                    if age_min >= 0 and age_min <= 150:
-                        query = query.filter(Person.age >= age_min)
+                    if age_min < 0 or age_min > 150:
+                        return jsonify({'error': '参数 age_min 必须在 0-150 之间'}), 400
+                    query = query.filter(Person.age >= age_min)
                 except (ValueError, TypeError):
-                    pass
+                    return jsonify({'error': '参数 age_min 必须是有效的整数'}), 400
             
             age_max_str = request.args.get('age_max', '').strip()
             if age_max_str:
                 try:
                     age_max = int(age_max_str)
-                    if age_max >= 0 and age_max <= 150:
-                        query = query.filter(Person.age <= age_max)
+                    if age_max < 0 or age_max > 150:
+                        return jsonify({'error': '参数 age_max 必须在 0-150 之间'}), 400
+                    query = query.filter(Person.age <= age_max)
                 except (ValueError, TypeError):
-                    pass
+                    return jsonify({'error': '参数 age_max 必须是有效的整数'}), 400
             
             pagination = query.order_by(Person.created_at.desc()).paginate(
                 page=page,
@@ -978,7 +980,7 @@ def test_combined_filters(client):
     assert data['data'][0]['name'] == '张小明'
 
 
-def test_invalid_filter_params_tolerance(client):
+def test_invalid_filter_params_return_400(client):
     client.post('/register', json={
         'username': 'testuser',
         'password': get_valid_password()
@@ -992,24 +994,24 @@ def test_invalid_filter_params_tolerance(client):
     client.post('/people', json={'name': '李四', 'age': 30})
     
     response = client.get('/people?age_min=abc')
-    assert response.status_code == 200
+    assert response.status_code == 400
     data = response.get_json()
-    assert len(data['data']) == 2
+    assert 'age_min' in data['error']
     
     response = client.get('/people?age_max=-5')
-    assert response.status_code == 200
+    assert response.status_code == 400
     data = response.get_json()
-    assert len(data['data']) == 2
+    assert 'age_max' in data['error']
     
     response = client.get('/people?age_min=200')
-    assert response.status_code == 200
+    assert response.status_code == 400
     data = response.get_json()
-    assert len(data['data']) == 2
+    assert 'age_min' in data['error']
     
     response = client.get('/people?age_min=20&age_max=abc')
-    assert response.status_code == 200
+    assert response.status_code == 400
     data = response.get_json()
-    assert len(data['data']) == 2
+    assert 'age_max' in data['error']
     
     response = client.get('/people?name=&age_min=25')
     assert response.status_code == 200

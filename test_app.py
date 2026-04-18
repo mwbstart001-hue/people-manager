@@ -44,6 +44,7 @@ def create_test_app():
         name = db.Column(db.String(80), nullable=False)
         age = db.Column(db.Integer, nullable=True)
         email = db.Column(db.String(120), nullable=True)
+        phone = db.Column(db.String(20), nullable=True)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
         updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -53,6 +54,7 @@ def create_test_app():
                 'name': self.name,
                 'age': self.age,
                 'email': self.email,
+                'phone': self.phone,
                 'created_at': self.created_at.isoformat() if self.created_at else None,
                 'updated_at': self.updated_at.isoformat() if self.updated_at else None
             }
@@ -62,6 +64,15 @@ def create_test_app():
             return True
         pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
         return re.match(pattern, email) is not None
+
+    def is_valid_phone(phone):
+        if not phone:
+            return True
+        if phone.startswith('+'):
+            pattern = r'^\+\d{8,14}$'
+        else:
+            pattern = r'^\d{8,15}$'
+        return re.match(pattern, phone) is not None
 
     def is_strong_password(password):
         if len(password) < 8:
@@ -182,7 +193,35 @@ def create_test_app():
             if per_page < 1 or per_page > 100:
                 per_page = 10
             
-            pagination = Person.query.order_by(Person.created_at.desc()).paginate(
+            query = Person.query
+            
+            name = request.args.get('name', '').strip()
+            if name:
+                query = query.filter(Person.name.contains(name))
+            
+            email = request.args.get('email', '').strip()
+            if email:
+                query = query.filter(Person.email == email)
+            
+            age_min_str = request.args.get('age_min', '').strip()
+            if age_min_str:
+                try:
+                    age_min = int(age_min_str)
+                    if age_min >= 0 and age_min <= 150:
+                        query = query.filter(Person.age >= age_min)
+                except (ValueError, TypeError):
+                    pass
+            
+            age_max_str = request.args.get('age_max', '').strip()
+            if age_max_str:
+                try:
+                    age_max = int(age_max_str)
+                    if age_max >= 0 and age_max <= 150:
+                        query = query.filter(Person.age <= age_max)
+                except (ValueError, TypeError):
+                    pass
+            
+            pagination = query.order_by(Person.created_at.desc()).paginate(
                 page=page,
                 per_page=per_page,
                 error_out=False
@@ -225,6 +264,7 @@ def create_test_app():
             name = data.get('name', '').strip()
             age = data.get('age')
             email = data.get('email', '').strip() if data.get('email') else None
+            phone = data.get('phone', '').strip() if data.get('phone') else None
             
             if not name:
                 return jsonify({'error': '姓名为必填项'}), 400
@@ -246,10 +286,17 @@ def create_test_app():
                 if not is_valid_email(email):
                     return jsonify({'error': '邮箱格式不正确'}), 400
             
+            if phone:
+                if len(phone) > 20:
+                    return jsonify({'error': '电话长度不能超过20位'}), 400
+                if not is_valid_phone(phone):
+                    return jsonify({'error': '电话格式不正确'}), 400
+            
             person = Person(
                 name=name,
                 age=age,
-                email=email
+                email=email,
+                phone=phone
             )
             
             db.session.add(person)
@@ -304,6 +351,15 @@ def create_test_app():
                     if not is_valid_email(email):
                         return jsonify({'error': '邮箱格式不正确'}), 400
                 person.email = email
+            
+            if 'phone' in data:
+                phone = data['phone'].strip() if data['phone'] else None
+                if phone:
+                    if len(phone) > 20:
+                        return jsonify({'error': '电话长度不能超过20位'}), 400
+                    if not is_valid_phone(phone):
+                        return jsonify({'error': '电话格式不正确'}), 400
+                person.phone = phone
             
             db.session.commit()
             
@@ -669,3 +725,298 @@ def test_full_workflow(client):
     
     response = client.get('/people')
     assert response.status_code == 401
+
+
+def test_create_person_valid_phone(client):
+    client.post('/register', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    client.post('/login', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    
+    response = client.post('/people', json={
+        'name': '张三',
+        'age': 25,
+        'phone': '13812345678'
+    })
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data['person']['phone'] == '13812345678'
+    
+    response = client.post('/people', json={
+        'name': '李四',
+        'age': 30,
+        'phone': '+8613812345678'
+    })
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data['person']['phone'] == '+8613812345678'
+    
+    response = client.post('/people', json={
+        'name': '王五',
+        'age': 28
+    })
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data['person']['phone'] is None
+
+
+def test_create_person_invalid_phone(client):
+    client.post('/register', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    client.post('/login', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    
+    response = client.post('/people', json={
+        'name': '张三',
+        'age': 25,
+        'phone': '1234567'
+    })
+    assert response.status_code == 400
+    
+    response = client.post('/people', json={
+        'name': '李四',
+        'age': 30,
+        'phone': '1234567890123456'
+    })
+    assert response.status_code == 400
+    
+    response = client.post('/people', json={
+        'name': '王五',
+        'age': 28,
+        'phone': '+1234567'
+    })
+    assert response.status_code == 400
+    
+    response = client.post('/people', json={
+        'name': '赵六',
+        'age': 32,
+        'phone': 'abc12345678'
+    })
+    assert response.status_code == 400
+
+
+def test_update_person_phone(client):
+    client.post('/register', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    client.post('/login', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    
+    response = client.post('/people', json={
+        'name': '张三',
+        'age': 25
+    })
+    assert response.status_code == 201
+    person_id = response.get_json()['person']['id']
+    
+    response = client.put(f'/people/{person_id}', json={
+        'phone': '13998765432'
+    })
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['person']['phone'] == '13998765432'
+    
+    response = client.put(f'/people/{person_id}', json={
+        'phone': None
+    })
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['person']['phone'] is None
+
+
+def test_name_fuzzy_search(client):
+    client.post('/register', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    client.post('/login', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    
+    client.post('/people', json={'name': '张三丰', 'age': 25})
+    client.post('/people', json={'name': '张无忌', 'age': 30})
+    client.post('/people', json={'name': '李小龙', 'age': 28})
+    client.post('/people', json={'name': '张三', 'age': 22})
+    
+    response = client.get('/people?name=三')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 2
+    
+    response = client.get('/people?name=张')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 3
+    
+    response = client.get('/people?name=李小')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 1
+    
+    response = client.get('/people?name=小龙')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 1
+    
+    response = client.get('/people?name=不存在')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 0
+
+
+def test_email_exact_search(client):
+    client.post('/register', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    client.post('/login', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    
+    client.post('/people', json={'name': '张三', 'age': 25, 'email': 'zhangsan@example.com'})
+    client.post('/people', json={'name': '李四', 'age': 30, 'email': 'lisi@example.com'})
+    client.post('/people', json={'name': '王五', 'age': 28, 'email': 'wangwu@example.com'})
+    
+    response = client.get('/people?email=zhangsan@example.com')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 1
+    assert data['data'][0]['name'] == '张三'
+    
+    response = client.get('/people?email=nonexistent@example.com')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 0
+    
+    response = client.get('/people?email=zhangsan')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 0
+
+
+def test_age_range_search(client):
+    client.post('/register', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    client.post('/login', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    
+    client.post('/people', json={'name': '青年', 'age': 18})
+    client.post('/people', json={'name': '成年', 'age': 25})
+    client.post('/people', json={'name': '中年', 'age': 40})
+    client.post('/people', json={'name': '老年', 'age': 60})
+    client.post('/people', json={'name': '无年龄', 'age': None})
+    
+    response = client.get('/people?age_min=25')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 3
+    
+    response = client.get('/people?age_max=40')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 3
+    
+    response = client.get('/people?age_min=20&age_max=50')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 2
+    
+    response = client.get('/people?age_min=25&age_max=25')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 1
+    assert data['data'][0]['name'] == '成年'
+
+
+def test_combined_filters(client):
+    client.post('/register', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    client.post('/login', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    
+    client.post('/people', json={'name': '张小明', 'age': 25, 'email': 'zhangxm@example.com'})
+    client.post('/people', json={'name': '张小红', 'age': 30, 'email': 'zhangxh@example.com'})
+    client.post('/people', json={'name': '李小明', 'age': 25, 'email': 'lixm@example.com'})
+    client.post('/people', json={'name': '王小红', 'age': 30, 'email': 'wangxh@example.com'})
+    
+    response = client.get('/people?name=小&age_min=25&age_max=25')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 2
+    
+    response = client.get('/people?name=张&age_min=28')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 1
+    assert data['data'][0]['name'] == '张小红'
+    
+    response = client.get('/people?email=zhangxm@example.com&age_min=20')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 1
+    assert data['data'][0]['name'] == '张小明'
+
+
+def test_invalid_filter_params_tolerance(client):
+    client.post('/register', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    client.post('/login', json={
+        'username': 'testuser',
+        'password': get_valid_password()
+    })
+    
+    client.post('/people', json={'name': '张三', 'age': 25})
+    client.post('/people', json={'name': '李四', 'age': 30})
+    
+    response = client.get('/people?age_min=abc')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 2
+    
+    response = client.get('/people?age_max=-5')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 2
+    
+    response = client.get('/people?age_min=200')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 2
+    
+    response = client.get('/people?age_min=20&age_max=abc')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 2
+    
+    response = client.get('/people?name=&age_min=25')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 2
+    
+    response = client.get('/people?invalid_param=123&name=张')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data['data']) == 1

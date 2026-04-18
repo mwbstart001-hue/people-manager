@@ -53,6 +53,7 @@ class Person(db.Model):
     name = db.Column(db.String(80), nullable=False)
     age = db.Column(db.Integer, nullable=True)
     email = db.Column(db.String(120), nullable=True)
+    phone = db.Column(db.String(20), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -62,6 +63,7 @@ class Person(db.Model):
             'name': self.name,
             'age': self.age,
             'email': self.email,
+            'phone': self.phone,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -72,6 +74,16 @@ def is_valid_email(email):
         return True
     pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
     return re.match(pattern, email) is not None
+
+
+def is_valid_phone(phone):
+    if not phone:
+        return True
+    if phone.startswith('+'):
+        pattern = r'^\+\d{8,14}$'
+    else:
+        pattern = r'^\d{8,15}$'
+    return re.match(pattern, phone) is not None
 
 
 def is_strong_password(password):
@@ -233,7 +245,35 @@ def get_people():
         if per_page < 1 or per_page > 100:
             per_page = 10
         
-        pagination = Person.query.order_by(Person.created_at.desc()).paginate(
+        query = Person.query
+        
+        name = request.args.get('name', '').strip()
+        if name:
+            query = query.filter(Person.name.contains(name))
+        
+        email = request.args.get('email', '').strip()
+        if email:
+            query = query.filter(Person.email == email)
+        
+        age_min_str = request.args.get('age_min', '').strip()
+        if age_min_str:
+            try:
+                age_min = int(age_min_str)
+                if age_min >= 0 and age_min <= 150:
+                    query = query.filter(Person.age >= age_min)
+            except (ValueError, TypeError):
+                pass
+        
+        age_max_str = request.args.get('age_max', '').strip()
+        if age_max_str:
+            try:
+                age_max = int(age_max_str)
+                if age_max >= 0 and age_max <= 150:
+                    query = query.filter(Person.age <= age_max)
+            except (ValueError, TypeError):
+                pass
+        
+        pagination = query.order_by(Person.created_at.desc()).paginate(
             page=page,
             per_page=per_page,
             error_out=False
@@ -278,6 +318,7 @@ def create_person():
         name = data.get('name', '').strip()
         age = data.get('age')
         email = data.get('email', '').strip() if data.get('email') else None
+        phone = data.get('phone', '').strip() if data.get('phone') else None
         
         if not name:
             return jsonify({'error': '姓名为必填项'}), 400
@@ -299,10 +340,17 @@ def create_person():
             if not is_valid_email(email):
                 return jsonify({'error': '邮箱格式不正确'}), 400
         
+        if phone:
+            if len(phone) > 20:
+                return jsonify({'error': '电话长度不能超过20位'}), 400
+            if not is_valid_phone(phone):
+                return jsonify({'error': '电话格式不正确'}), 400
+        
         person = Person(
             name=name,
             age=age,
-            email=email
+            email=email,
+            phone=phone
         )
         
         db.session.add(person)
@@ -358,6 +406,15 @@ def update_person(person_id):
                 if not is_valid_email(email):
                     return jsonify({'error': '邮箱格式不正确'}), 400
             person.email = email
+        
+        if 'phone' in data:
+            phone = data['phone'].strip() if data['phone'] else None
+            if phone:
+                if len(phone) > 20:
+                    return jsonify({'error': '电话长度不能超过20位'}), 400
+                if not is_valid_phone(phone):
+                    return jsonify({'error': '电话格式不正确'}), 400
+            person.phone = phone
         
         db.session.commit()
         

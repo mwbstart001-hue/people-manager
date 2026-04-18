@@ -1022,3 +1022,160 @@ def test_invalid_filter_params_return_400(client):
     assert response.status_code == 200
     data = response.get_json()
     assert len(data['data']) == 1
+
+
+def is_valid_email_ut(email):
+    if not email:
+        return True
+    pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+    return re.match(pattern, email) is not None
+
+
+def is_valid_phone_ut(phone):
+    if not phone:
+        return True
+    if phone.startswith('+'):
+        pattern = r'^\+\d{8,14}$'
+    else:
+        pattern = r'^\d{8,15}$'
+    return re.match(pattern, phone) is not None
+
+
+def is_strong_password_ut(password):
+    if len(password) < 8:
+        return False, '密码长度至少为8位'
+    if len(password) > 128:
+        return False, '密码长度不能超过128位'
+    has_letter = re.search(r'[a-zA-Z]', password) is not None
+    has_digit = re.search(r'\d', password) is not None
+    if not (has_letter and has_digit):
+        return False, '密码必须包含字母和数字'
+    return True, None
+
+
+class TestIsStrongPassword:
+    def test_password_too_short(self):
+        valid, msg = is_strong_password_ut('Ab12345')
+        assert valid is False
+        assert '8位' in msg
+
+    def test_password_exactly_8_chars(self):
+        valid, msg = is_strong_password_ut('Abc12345')
+        assert valid is True
+        assert msg is None
+
+    def test_password_128_chars(self):
+        long_pass = 'A' + 'a' * 63 + '1' * 63
+        assert len(long_pass) == 127
+        valid, msg = is_strong_password_ut(long_pass + '2')
+        assert valid is True
+        assert msg is None
+
+    def test_password_too_long(self):
+        long_pass = 'A' + 'a' * 63 + '1' * 64
+        assert len(long_pass) == 128
+        valid, msg = is_strong_password_ut(long_pass + '2')
+        assert valid is False
+        assert '128位' in msg
+
+    def test_password_no_letter(self):
+        valid, msg = is_strong_password_ut('12345678')
+        assert valid is False
+        assert '字母' in msg
+
+    def test_password_no_digit(self):
+        valid, msg = is_strong_password_ut('Abcdefgh')
+        assert valid is False
+        assert '数字' in msg
+
+    def test_password_with_special_chars(self):
+        valid, msg = is_strong_password_ut('Test@123')
+        assert valid is True
+        assert msg is None
+
+    def test_password_mixed_case(self):
+        valid, msg = is_strong_password_ut('tEsT1234')
+        assert valid is True
+        assert msg is None
+
+
+class TestIsValidEmail:
+    def test_empty_email(self):
+        assert is_valid_email_ut('') is True
+        assert is_valid_email_ut(None) is True
+
+    def test_valid_email_simple(self):
+        assert is_valid_email_ut('user@example.com') is True
+        assert is_valid_email_ut('user.name@example.com') is True
+
+    def test_valid_email_with_underscore(self):
+        assert is_valid_email_ut('user_name@example.com') is True
+
+    def test_valid_email_with_plus(self):
+        assert is_valid_email_ut('user+tag@example.com') is True
+
+    def test_valid_email_with_hyphen(self):
+        assert is_valid_email_ut('user-name@example.com') is True
+
+    def test_valid_email_subdomain(self):
+        assert is_valid_email_ut('user@sub.example.com') is True
+
+    def test_invalid_email_no_at(self):
+        assert is_valid_email_ut('userexample.com') is False
+
+    def test_invalid_email_no_domain(self):
+        assert is_valid_email_ut('user@') is False
+
+    def test_invalid_email_no_local(self):
+        assert is_valid_email_ut('@example.com') is False
+
+    def test_invalid_email_special_chars(self):
+        assert is_valid_email_ut('user!name@example.com') is False
+
+    def test_invalid_email_double_at(self):
+        assert is_valid_email_ut('user@@example.com') is False
+
+
+class TestIsValidPhone:
+    def test_empty_phone(self):
+        assert is_valid_phone_ut('') is True
+        assert is_valid_phone_ut(None) is True
+
+    def test_valid_phone_digits_8(self):
+        assert is_valid_phone_ut('12345678') is True
+
+    def test_valid_phone_digits_15(self):
+        assert is_valid_phone_ut('123456789012345') is True
+
+    def test_valid_phone_plus_9(self):
+        assert is_valid_phone_ut('+12345678') is True
+
+    def test_valid_phone_plus_15(self):
+        assert is_valid_phone_ut('+12345678901234') is True
+
+    def test_invalid_phone_too_short_7_digits(self):
+        assert is_valid_phone_ut('1234567') is False
+
+    def test_invalid_phone_too_long_16_digits(self):
+        assert is_valid_phone_ut('1234567890123456') is False
+
+    def test_invalid_phone_plus_too_short(self):
+        assert is_valid_phone_ut('+1234567') is False
+
+    def test_invalid_phone_plus_too_long(self):
+        assert is_valid_phone_ut('+123456789012345') is False
+
+    def test_invalid_phone_with_letters(self):
+        assert is_valid_phone_ut('abc12345678') is False
+
+    def test_invalid_phone_with_special_chars(self):
+        assert is_valid_phone_ut('123-456-7890') is False
+
+    def test_invalid_phone_with_spaces(self):
+        assert is_valid_phone_ut(' 12345678 ') is False
+
+    def test_invalid_phone_double_plus(self):
+        assert is_valid_phone_ut('++12345678') is False
+
+    def test_invalid_phone_plus_in_middle(self):
+        assert is_valid_phone_ut('123+4567890') is False
